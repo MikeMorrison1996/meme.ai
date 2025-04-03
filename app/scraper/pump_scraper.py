@@ -1,34 +1,18 @@
-import asyncio
-import websockets
-import json
 import requests
-import base64
+import json
 import os
-import hashlib
 
-from solders.pubkey import Pubkey
+# Output file path
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'output')
+DATA_PATH = os.path.join(OUTPUT_DIR, "clean_token_data.json")
 
-SOLANA_WS = "wss://api.mainnet-beta.solana.com/"
-SOLANA_RPC = "https://api.mainnet-beta.solana.com/"
-METADATA_PROGRAM_ID = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-DATA_PATH = "clean_token_data.json"
-HEADERS = { "Content-Type": "application/json" }
+# Updated to use Solana and the specific pairId provided
+CHAIN_ID = "solana"
+PAIR_ID = "GiqkyXUkexS2WNMadEKq1JRPELcF97nU7zHz1DH4zyvM"
+DEX_PROFILES_API = f"https://api.dexscreener.com/latest/dex/pairs/{CHAIN_ID}/{PAIR_ID}"
 
-def find_metadata_pda(mint):
-    seeds = [
-        b"metadata",
-        bytes(Pubkey.from_string(METADATA_PROGRAM_ID)),
-        bytes(Pubkey.from_string(mint))
-    ]
-    for nonce in range(255, 0, -1):
-        try:
-            seeds_with_nonce = seeds + [bytes([nonce])]
-            hash_bytes = hashlib.sha256(b''.join(seeds_with_nonce)).digest()
-            pda = Pubkey.from_bytes(hash_bytes[:32])
-            return pda, nonce
-        except:
-            continue
-    raise Exception("Could not find PDA")
+# Ensure output directory exists
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def save_token(meta):
     if not os.path.exists(DATA_PATH):
@@ -46,80 +30,28 @@ def save_token(meta):
         json.dump(existing, f, indent=2)
         f.truncate()
 
-def fetch_token_metadata(mint_address):
-    metadata_pda, _ = find_metadata_pda(mint_address)
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getAccountInfo",
-        "params": [str(metadata_pda), {"encoding": "base64"}]
-    }
-    res = requests.post(SOLANA_RPC, headers=HEADERS, json=payload)
-    if res.ok:
-        try:
-            data = res.json()['result']['value']['data'][0]
-            raw_bytes = base64.b64decode(data)
-            name = raw_bytes[1:33].decode('utf-8').strip('\x00')
-            symbol = raw_bytes[33:43].decode('utf-8').strip('\x00')
-            uri = raw_bytes[115:247].decode('utf-8').strip('\x00')
-            meta = requests.get(uri).json()
-            image_url = meta.get("image", "")
-            return {
-                "mint": mint_address,
-                "name": name,
-                "symbol": symbol,
-                "uri": uri,
-                "image": image_url
+def fetch_and_save_tokens():
+    print("📥 Fetching Solana token data from DEX Screener...")
+    try:
+        res = requests.get(DEX_PROFILES_API)
+        if res.ok:
+            token = res.json().get("pair", {})
+            token_data = {
+                "name": token.get("baseToken", {}).get("name", ""),
+                "ticker": token.get("baseToken", {}).get("symbol", ""),
+                "marketcap": float(token.get("fdv", 0)),
+                "volume": float(token.get("volume", {}).get("h24", 0)),
+                "num_holders": 0,  # DEX Screener doesn't provide holders
+                "dev_wallet": token.get("pairCreatedBy", ""),
+                "image": token.get("baseToken", {}).get("logoUrl", ""),
+                "progress": 0.0
             }
-        except Exception as e:
-            print(f"❌ Failed to parse metadata for {mint_address}: {e}")
-    return None
-
-def extract_mint_from_log(logs):
-    for log in logs:
-        if "Program log: Mint:" in log:
-            return log.split("Program log: Mint:")[-1].strip()
-    return None
-
-async def listen_new_tokens():
-    print("📡 Connecting to Solana WebSocket...")
-    async with websockets.connect(SOLANA_WS) as websocket:
-        print("✅ Connected. Listening for token creation events...")
-
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "logsSubscribe",
-            "params": [
-                {"mentions": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"]},
-                {"commitment": "confirmed"}
-            ]
-        }
-
-        await websocket.send(json.dumps(payload))
-
-        while True:
-            response = await websocket.recv()
-            data = json.loads(response)
-
-            if 'method' in data and data['method'] == 'logsNotification':
-                logs = data['params']['result']['value']['logs']
-                sig = data['params']['result']['value']['signature']
-                for log in logs:
-                    if "initializeMint" in log:
-                        print(f"🧠 New Mint Detected! Signature: {sig}")
-                        mint_address = extract_mint_from_log(logs)
-                        if mint_address:
-                            meta = fetch_token_metadata(mint_address)
-                            if meta:
-                                print("🎉 Token Metadata:")
-                                for k, v in meta.items():
-                                    print(f"  {k}: {v}")
-                                save_token(meta)
-                                print("📥 Token saved to clean_token_data.json ✅\n")
+            save_token(token_data)
+            print(f"✅ Saved token: {token_data['name']} ({token_data['ticker']})")
+        else:
+            print(f"❌ Failed to fetch token data. Status code: {res.status_code}")
+    except Exception as e:
+        print(f"⚠️ Error during API call: {e}")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(listen_new_tokens())
-    except KeyboardInterrupt:
-        print("👋 Exiting Solana token listener.")
+    fetch_and_save_tokens()
