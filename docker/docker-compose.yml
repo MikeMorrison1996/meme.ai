@@ -1,0 +1,11 @@
+services:
+  memeai-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ../:/app
+    command: python run.py
+
