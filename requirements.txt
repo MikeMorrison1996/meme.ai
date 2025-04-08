@@ -1,7 +1,0 @@
-flask
-requests
-beautifulsoup4
-python-telegram-bot
-solana==0.26.0
-websockets
-base58
