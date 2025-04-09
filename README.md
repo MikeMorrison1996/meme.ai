@@ -1,5 +1,3 @@
-Below is a polished README in Markdown for your project. You can save this as `README.md` in the root of your project.
-
 ```markdown
 # Meme.ai
 
