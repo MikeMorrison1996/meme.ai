@@ -1,3 +1,5 @@
+![image](https://github.com/user-attachments/assets/3ec5faa4-40ab-42e9-a148-b6eae1c44a3a)
+
 ```markdown
 # Meme.ai
 
