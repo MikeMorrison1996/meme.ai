@@ -1,0 +1,12 @@
+# Node modules for both frontend and backend
+**/node_modules/
+
+# Build folders
+backend/dist/
+frontend/build/
+
+# Local environment variables, if any
+**/.env
+
+# Docker related
+docker-compose.override.yml
